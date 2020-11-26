@@ -1,6 +1,9 @@
 //! Traits
 
 use generic_array::typenum::Unsigned;
+use Mat;
+use core::mem::MaybeUninit;
+use generic_array::ArrayLength;
 
 /// The transpose operation
 pub trait Transpose: Copy {
@@ -26,6 +29,26 @@ pub trait Matrix: UnsafeGet {
         assert!(r < self.nrows() && c < self.ncols());
 
         unsafe { self.unsafe_get(r, c) }
+    }
+
+    /// Collect the abstract matrix in a concrete one
+    fn collect(self) -> Mat<Self::Elem, Self::NROWS, Self::NCOLS>
+        where Self::NROWS: core::ops::Mul<Self::NCOLS> + Unsigned,
+              Self::NCOLS: ArrayLength<Self::Elem> + Unsigned,
+              <Self::NROWS as core::ops::Mul<Self::NCOLS>>::Output:
+                generic_array::ArrayLength<<Self as UnsafeGet>::Elem> {
+
+        let mut result: Mat<_, _, _> =
+            unsafe {
+                MaybeUninit::<Mat::<Self::Elem, Self::NROWS, Self::NCOLS>>::uninit().assume_init()
+            };
+
+        for i in 0..Self::NROWS::to_usize() {
+            for j in 0..Self::NCOLS::to_usize() {
+                result[i][j] = unsafe { self.unsafe_get(i, j) };
+            }
+        }
+        result
     }
 
     /// Returns the size of the matrix

@@ -178,7 +178,7 @@ where
 }
 
 /// Statically allocated (row major order) matrix
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Mat<T, NROWS, NCOLS>
 where
     NROWS: ops::Mul<NCOLS>,
@@ -199,6 +199,13 @@ pub struct Product<L, R> {
 /// The sum of two matrices
 #[derive(Clone, Copy)]
 pub struct Sum<L, R> {
+    l: L,
+    r: R,
+}
+
+/// The diff of two matrices
+#[derive(Clone, Copy)]
+pub struct Diff<L, R> {
     l: L,
     r: R,
 }
@@ -333,6 +340,35 @@ where
     }
 }
 
+impl<'a, T, NROWS, NCOLS, R> ops::Add<R> for &'a Mat<T, NROWS, NCOLS>
+    where
+        NROWS: ops::Mul<NCOLS> + Unsigned,
+        NCOLS: Unsigned,
+        Prod<NROWS, NCOLS>: ArrayLength<T>,
+        R: Matrix<NROWS=NROWS, NCOLS=NCOLS>,
+{
+    type Output = Sum<&'a Mat<T, NROWS, NCOLS>, R>;
+
+    fn add(self, rhs: R) -> Self::Output {
+        Sum { l: self, r: rhs }
+    }
+}
+
+impl<'a, T, NROWS, NCOLS, R> ops::Sub<R> for &'a Mat<T, NROWS, NCOLS>
+    where
+        NROWS: ops::Mul<NCOLS> + Unsigned,
+        NCOLS: Unsigned,
+        Prod<NROWS, NCOLS>: ArrayLength<T>,
+        R: Matrix<NROWS=NROWS, NCOLS=NCOLS>,
+{
+    type Output = Diff<&'a Mat<T, NROWS, NCOLS>, R>;
+
+    fn sub(self, rhs: R) -> Self::Output {
+        Diff { l: self, r: rhs }
+    }
+}
+
+
 impl<L, R, T> Matrix for Product<L, R>
 where
     L: Matrix<Elem = T>,
@@ -395,3 +431,66 @@ where
         self.l.unsafe_get(r, c) + self.r.unsafe_get(r, c)
     }
 }
+
+
+impl<T, L, R> Matrix for Diff<L, R>
+    where
+        L: Matrix<Elem = T>,
+        R: Matrix<Elem = T>,
+        T: ops::Sub<T, Output = T> + Copy,
+{
+    type NROWS = L::NROWS;
+    type NCOLS = L::NCOLS;
+}
+
+impl<T, L, R> UnsafeGet for Diff<L, R>
+    where
+        L: Matrix<Elem = T>,
+        R: Matrix<Elem = T>,
+        T: ops::Sub<T, Output = T> + Copy,
+{
+    type Elem = T;
+
+    unsafe fn unsafe_get(self, r: usize, c: usize) -> T {
+        self.l.unsafe_get(r, c) - self.r.unsafe_get(r, c)
+    }
+}
+
+/// Convert between matrices of different size!
+pub trait CastMat<T> {
+    /// Convert a matrix into another one
+    fn cast(&self) -> &T;
+    /// Convert a mut matrix into another one
+    fn cast_mut(&mut self) -> &mut T;
+}
+
+// macro_rules! assert_size_eq {
+//     ($name: ty, $name2: ty) => {
+//         let _ : [(); core::mem::size_of::<$name2>()] = [(); core::mem::size_of::<$name>()];
+//     }
+// }
+
+
+impl<T, NROWS, NCOLS, ONROWS, ONCOLS>
+    CastMat<Mat<T, ONROWS, ONCOLS>> for Mat<T, NROWS, NCOLS>
+    where
+        NROWS: ops::Mul<NCOLS>,
+        ONROWS: ops::Mul<ONCOLS>,
+        Prod<NROWS, NCOLS>: ArrayLength<T>,
+        Prod<ONROWS, ONCOLS>: ArrayLength<T>,
+        Mat<T, NROWS, NCOLS>: Sized,
+        Mat<T, ONROWS, ONCOLS>: Sized,
+{
+    fn cast(&self) -> &Mat<T, ONROWS, ONCOLS> {
+        unsafe {
+            // assert_size_eq!(Prod<ONROWS, ONCOLS>, Prod<NROWS, NCOLS>);
+            core::mem::transmute(self)
+        }
+    }
+    fn cast_mut(&mut self) -> &mut Mat<T, ONROWS, ONCOLS> {
+        unsafe {
+            // assert_size_eq!(Mat<T, ONROWS, ONCOLS>, Mat<T, NROWS, NCOLS>);
+            core::mem::transmute(self)
+        }    }
+}
+
